@@ -84,28 +84,30 @@
           ([! (make-rename-transformer #'this-!)])
           ((logic-var-val* g) __fk)))))))
 
-(struct relation (clauses)
+(struct relation (name clauses)
   #:property prop:procedure
   (lambda (rel . __fmls)
     (%cut-delimiter
       (lambda (__fk)
-        (let/racklog-sk __sk
-          (for ([clause (in-list (relation-clauses rel))])
-            (let/racklog-fk (fail-clause __fk)
-              (__sk ((clause __fmls !) fail-clause))))
-          (__fk 'fail))))))
+        (with-racklog-continuation-mark (relation-name rel)
+          (let/racklog-sk __sk
+            (for ([clause (in-list (relation-clauses rel))])
+              (let/racklog-fk (fail-clause __fk)
+                (__sk ((clause __fmls !) fail-clause))))
+            (__fk 'fail)))))))
 
-(define-syntax %rel
-  (syntax-rules ()
+(define-syntax (%rel stx)
+  (syntax-case stx ()
     ((%rel (v ...) ((a ...) subgoal ...) ...)
-     (relation
-      (list
-       (lambda (__fmls rel-cut)
-         (syntax-parameterize ([! (make-rename-transformer #'rel-cut)])
-           (%let (v ...)
-             (%and (%= __fmls (list a ...))
-                   subgoal ...))))
-       ...)))))
+     #`(relation
+        '#,(or (syntax-local-name) (stx->srcloc stx))
+        (list
+         (lambda (__fmls rel-cut)
+           (syntax-parameterize ([! (make-rename-transformer #'rel-cut)])
+             (%let (v ...)
+               (%and (%= __fmls (list a ...))
+                     subgoal ...))))
+         ...)))))
 
 (define %fail
   (lambda (fk) (fk 'fail)))
@@ -240,8 +242,12 @@
 (define (%not g)
   (%if-then-else g %fail %true))
 
-(define %empty-rel
-  (relation '()))
+(define-syntax (%empty-rel stx)
+  (syntax-case stx ()
+    [(_ . args) #'%fail]
+    [_ #`(relation '#,(or (syntax-local-name)
+                          (stx->srcloc stx))
+                   '())]))
 
 (define-syntax %assert!
   (syntax-rules ()
@@ -249,7 +255,8 @@
      (set! rel-name
            (let ((__old-rel rel-name)
                  (__new-addition (%rel (v ...) ((a ...) subgoal ...) ...)))
-             (relation (append (relation-clauses __old-rel)
+             (relation (relation-name __old-rel)
+                       (append (relation-clauses __old-rel)
                                (relation-clauses __new-addition))))))))
 
 (define-syntax %assert-after!
@@ -258,7 +265,8 @@
      (set! rel-name
            (let ((__old-rel rel-name)
                  (__new-addition (%rel (v ...) ((a ...) subgoal ...) ...)))
-             (relation (append (relation-clauses __new-addition)
+             (relation (relation-name __old-rel)
+                       (append (relation-clauses __new-addition)
                                (relation-clauses __old-rel))))))))
 
 (define (set-cons e s)
@@ -324,22 +332,24 @@
 
 (define *more-fk* (box (λ (d) (error '%more "No active %which"))))
 
-(define-syntax %which
-  (syntax-rules ()
-    ((%which (v ...) g)
-     (with-racklog-prompt
-       (%let (v ...)
-         (set-box! *more-fk*
-                   ((logic-var-val* g)
-                    (make-racklog-fk
-                     (lambda (d)
-                       (set-box! *more-fk* #f)
-                       (abort-to-racklog-prompt #f)))))
-         (abort-to-racklog-prompt
-          (list (cons 'v (logic-var-val* v))
-                ...)))))
+(define-syntax (%which stx)
+  (syntax-case stx ()
+    [(%which (v ...) g)
+     #`(with-racklog-prompt
+         (with-racklog-continuation-mark
+             #,(stx->srcloc stx)
+           (%let (v ...)
+             (set-box! *more-fk*
+                       ((logic-var-val* g)
+                        (make-racklog-fk
+                         (lambda (d)
+                           (set-box! *more-fk* #f)
+                           (abort-to-racklog-prompt #f)))))
+             (abort-to-racklog-prompt
+              (list (cons 'v (logic-var-val* v))
+                    ...)))))]
     [(%which (v ...) g ...)
-     (%which (v ...) (%and g ...))]))
+     (syntax/loc stx (%which (v ...) (%and g ...)))]))
 
 (define (%more)
   (with-racklog-prompt
@@ -347,11 +357,11 @@
         ((unbox *more-fk*) 'more)
         #f)))
 
-(define-syntax %find-all
-  (syntax-rules ()
+(define-syntax (%find-all stx)
+  (syntax-case stx ()
     [(_ (v ...) g)
-     (list* (%which (v ...) g)
-            (%more-list))]))
+     #`(list* #,(syntax/loc stx (%which (v ...) g))
+              (%more-list))]))
 
 (define (%more-list)
   (define a (%more))
@@ -360,10 +370,13 @@
       empty))
 
 (define racklog-prompt-tag (make-continuation-prompt-tag 'racklog))
+(define racklog-continuation-mark-key (make-continuation-mark-key 'racklog))
 (define (abort-to-racklog-prompt a)
   (abort-current-continuation racklog-prompt-tag (λ () a)))
 (define-syntax-rule (with-racklog-prompt e ...)
   (call-with-continuation-prompt (λ () e ...) racklog-prompt-tag))
+(define-syntax-rule (with-racklog-continuation-mark payload e)
+  (with-continuation-mark racklog-continuation-mark-key payload e))
 (define-syntax-rule (let/racklog-cc k e ...)
   (call-with-current-continuation (λ (k) e ...) racklog-prompt-tag))
 (define-syntax-rule (let/racklog-sk k e ...)
@@ -375,6 +388,14 @@
         (fk 'fail))))
 (define-syntax-rule (let/racklog-fk (k uk) e ...)
   (let/racklog-cc fk (let ([k (make-racklog-fk fk uk)]) e ...)))
+
+(define-for-syntax (stx->srcloc stx)
+  (vector
+   (syntax-source stx)
+   (syntax-line stx)
+   (syntax-column stx)
+   (syntax-position stx)
+   (syntax-span stx)))
 
 (define (%member x y)
   (%let (xs z zs)
@@ -454,4 +475,5 @@
  [%set-of-1 (unifiable? goal/c unifiable? . -> . goal/c)]
  [%true goal/c]
  [%var (unifiable? . -> . goal/c)]
- [_ (-> logic-var?)]) 
+ [_ (-> logic-var?)]
+ [racklog-continuation-mark-key continuation-mark-key?])

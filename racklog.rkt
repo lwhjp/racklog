@@ -4,6 +4,7 @@
                      syntax/kerncase)
          racket/list
          racket/contract
+         racket/stream
          racket/stxparam
          "unify.rkt")
 
@@ -322,42 +323,53 @@
   (%and (%set-of x g s)
         (%= s (cons (_) (_)))))
 
-(define *more-fk* (box (λ (d) (error '%more "No active %which"))))
+(define (make-solution-stream goal thunk)
+  (let loop ([more-fk (λ (d)
+                        ((logic-var-val* goal)
+                         (make-racklog-fk
+                          (λ (d)
+                            (abort-to-racklog-prompt empty-stream)))))])
+    (with-racklog-prompt
+      (define next-fk (more-fk 'more))
+      (stream-cons (thunk) (loop next-fk)))))
+
+(define-syntax-rule
+  (in-answers (v ...) goal)
+  (%let (v ...)
+    (make-solution-stream
+     goal
+     (λ ()
+       (list (cons 'v (logic-var-val* v))
+             ...)))))
+
+(define *current-answers* (box #f))
 
 (define-syntax %which
   (syntax-rules ()
     ((%which (v ...) g)
-     (with-racklog-prompt
-       (%let (v ...)
-         (set-box! *more-fk*
-                   ((logic-var-val* g)
-                    (make-racklog-fk
-                     (lambda (d)
-                       (set-box! *more-fk* #f)
-                       (abort-to-racklog-prompt #f)))))
-         (abort-to-racklog-prompt
-          (list (cons 'v (logic-var-val* v))
-                ...)))))
+     (begin
+       (set-box! *current-answers* (in-answers (v ...) g))
+       (%more)))
     [(%which (v ...) g ...)
      (%which (v ...) (%and g ...))]))
 
 (define (%more)
-  (with-racklog-prompt
-    (if (unbox *more-fk*)
-        ((unbox *more-fk*) 'more)
-        #f)))
+  (define answers
+    (or (unbox *current-answers*)
+        (error '%more "No active %which")))
+  (if (stream-empty? answers)
+      #f
+      (begin0
+        (stream-first answers)
+        (set-box! *current-answers* (stream-rest answers)))))
 
 (define-syntax %find-all
   (syntax-rules ()
     [(_ (v ...) g)
-     (list* (%which (v ...) g)
-            (%more-list))]))
-
-(define (%more-list)
-  (define a (%more))
-  (if a
-      (list* a (%more-list))
-      empty))
+     (let ([answers (in-answers (v ...) g)])
+       (if (stream-empty? answers)
+           '(#f)
+           (stream->list answers)))]))
 
 (define racklog-prompt-tag (make-continuation-prompt-tag 'racklog))
 (define (abort-to-racklog-prompt a)
@@ -409,7 +421,7 @@
 
 ; XXX Add contracts in theses macro expansions
 (provide %and %assert! %assert-after! %cut-delimiter %free-vars %is %let
-         %or %rel %which %find-all !)
+         %or %rel %which %find-all in-answers !)
 (provide/contract
  [goal/c contract?]
  [logic-var? (any/c . -> . boolean?)]
@@ -420,6 +432,7 @@
  [unifiable? (any/c . -> . boolean?)]
  [answer-value? (any/c . -> . boolean?)]
  [answer? (any/c . -> . boolean?)]
+ [make-solution-stream (goal/c (-> any/c) . -> . stream?)]
  [%/= (unifiable? unifiable? . -> . goal/c)]
  [%/== (unifiable? unifiable? . -> . goal/c)]
  [%< (unifiable? unifiable? . -> . goal/c)]

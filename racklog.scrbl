@@ -1376,6 +1376,20 @@ be found, @racket[%more] returns @racket[#f].}
 Like @racket[(list (%which (V ...) G ...) (%more) ...)] with as many @racket[(%more)]s as there are answers. (This will not terminate if there are an infinite number of answers.)
 }
 
+@defform[(in-answers (V ...) G)
+         #:contracts ([V identifier?]
+                      [G goal/c])]{
+Returns a @racket[stream?] consisting of the values which would be
+returned by @racket[%which] and subsequent calls to @racket[%more],
+until no more solutions can be found.}
+
+@defproc[(make-solution-stream [thunk (-> any/c)]
+                               [goal goal?])
+         stream?]{
+Returns a @racket[stream?] in a similar to @racket[in-answers], but
+each element is constructed by calling @racket[thunk] and using the
+return value.}
+
 @subsection{Relations}
 
 @defform/subs[(%rel (V ...) clause ...)

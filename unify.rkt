@@ -443,19 +443,14 @@
      [(? atom? y) (eqv? x y)])]))
 
 (define (unify t1 t2)
-  (define iu (inner-unify t1 t2))
-  (λ (fk)
-    (define-values (cleanup k)
-      (iu fk))
-    k))
-
-(define (inner-unify t1 t2)
   (lambda (fk)
-    (define (cleanup s)
-      (for-each unbind-ref! s))
+    (define (set-logic-var-val!/cleanup t1 t2 s)
+      (set-logic-var-val! t1 t2)
+      (λ (msg)
+        (unbind-ref! t1)
+        (s msg)))
     (define (cleanup-n-fail s)
-      (cleanup s)
-      (fk 'fail))
+      (s 'fail))
     (define (unify1 t1 t2 s)
       (cond [(eqv? t1 t2) s]
             [(logic-var? t1)
@@ -463,8 +458,7 @@
                     (cond [(occurs-in? t1 t2)
                            (cleanup-n-fail s)]
                           [else 
-                           (set-logic-var-val! t1 t2)
-                           (list* t1 s)])]
+                           (set-logic-var-val!/cleanup t1 t2 s)])]
                    [(frozen-logic-var? t1)
                     (cond [(logic-var? t2)
                            (cond [(unbound-logic-var? t2)
@@ -514,11 +508,8 @@
                  (cleanup-n-fail s))]
             [else
              (cleanup-n-fail s)]))
-    (define s (unify1 t1 t2 empty))
-    (values
-     (λ () (cleanup s))
+    (unify1 t1 t2
      (lambda (d)
-       (cleanup s)
        (if (procedure? d)
            (unless (equal? fk d) (fk d)) ; unwind
            (fk 'fail))))))

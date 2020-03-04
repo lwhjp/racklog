@@ -243,6 +243,30 @@
   (lambda (fk)
     ((%= (copy s) c) fk)))
 
+(struct delayed
+  (var goal)
+  #:transparent
+  #:property prop:attribute
+  (attribute
+   #:verify
+   (%rel (var goal value)
+     [((delayed var goal) value)
+      (%clear-attribute var)
+      (%= var value)
+      goal])
+   #:combine
+   (%rel (v1 g1 v2 g2)
+     [((delayed v1 g1) (delayed v2 g2))
+      (%clear-attribute v1)
+      (%clear-attribute v2)
+      (%= v1 v2)
+      (%set-attribute v1 (delayed v1 (%and g1 g2)))])))
+
+(define (%delay x g)
+  (%let (v)
+    (%and (%set-attribute v (delayed v g))
+          (%= x v))))
+
 (define (%not g)
   (%if-then-else g %fail %true))
 
@@ -446,6 +470,7 @@
  [%compound (unifiable? . -> . goal/c)]
  [%constant (unifiable? . -> . goal/c)]
  [%copy (unifiable? unifiable? . -> . goal/c)]
+ [%delay (logic-var? goal/c . -> . goal/c)]
  [%empty-rel relation/c]
  [%fail goal/c]
  [%freeze (unifiable? unifiable? . -> . goal/c)]

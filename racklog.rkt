@@ -221,6 +221,12 @@
 (define (%/== x y)
   (lambda (fk) (if (ident? x y) (fk 'fail) fk)))
 
+(define %get-attribute get-attribute)
+
+(define %set-attribute set-attribute)
+
+(define %clear-attribute clear-attribute)
+
 (define (%freeze s f)
   (lambda (fk)
     ((%= (freeze s) f) fk)))
@@ -420,6 +426,7 @@
  [unifiable? (any/c . -> . boolean?)]
  [answer-value? (any/c . -> . boolean?)]
  [answer? (any/c . -> . boolean?)]
+ [attribute? (any/c . -> . boolean?)]
  [%/= (unifiable? unifiable? . -> . goal/c)]
  [%/== (unifiable? unifiable? . -> . goal/c)]
  [%< (unifiable? unifiable? . -> . goal/c)]
@@ -435,12 +442,14 @@
  [%apply (unifiable? unifiable? . -> . goal/c)]
  [%bag-of (unifiable? goal/c unifiable? . -> . goal/c)]
  [%bag-of-1 (unifiable? goal/c unifiable? . -> . goal/c)]
+ [%clear-attribute (logic-var? . -> . goal/c)]
  [%compound (unifiable? . -> . goal/c)]
  [%constant (unifiable? . -> . goal/c)]
  [%copy (unifiable? unifiable? . -> . goal/c)]
  [%empty-rel relation/c]
  [%fail goal/c]
  [%freeze (unifiable? unifiable? . -> . goal/c)]
+ [%get-attribute (logic-var? unifiable? . -> . goal/c)]
  [%if-then-else (goal/c goal/c goal/c . -> . goal/c)]
  [%melt (unifiable? unifiable? . -> . goal/c)]
  [%melt-new (unifiable? unifiable? . -> . goal/c)]
@@ -448,6 +457,7 @@
  [%nonvar (unifiable? . -> . goal/c)]
  [%not (goal/c . -> . goal/c)]
  [%more (-> answer?)]
+ [%set-attribute (logic-var? attribute? . -> . goal/c)]
  [%repeat (-> goal/c)]
  [use-occurs-check? (parameter/c boolean?)]
  [%set-of (unifiable? goal/c unifiable? . -> . goal/c)]

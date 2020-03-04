@@ -100,6 +100,71 @@
 (define (unbind-ref! r)
   (set-logic-var-val! r *unbound*))
 
+(define-struct attribute-impl
+  (verify combine))
+
+(define (attribute
+         #:verify verify
+         #:combine combine)
+  (make-attribute-impl verify combine))
+
+(define-values (prop:attribute attribute? get-attribute-impl)
+  (make-struct-type-property 'attribute))
+
+(define (attributed-logic-var? r)
+  (attribute? (logic-var-val r)))
+
+(define (get-attribute r a)
+  (λ (fk)
+    (let loop ([r r])
+      (cond
+        [(attributed-logic-var? r) ((unify (logic-var-val r) a) fk)]
+        [(logic-var? r) (loop (logic-var-val r))]
+        [else (fk 'fail)]))))
+
+(define (set-attribute r a)
+  (λ (fk)
+    (let loop ([r r])
+      (cond
+        [(not (logic-var? r))
+         ((verify-attribute a r) fk)]
+        [(or (unbound-logic-var? r) (attributed-logic-var? r))
+         (let ([old (logic-var-val r)])
+           (set-logic-var-val! r a)
+           (λ (m)
+             (set-logic-var-val! r old)
+             (if (procedure? m)
+                 (unless (equal? fk m) (fk m)) ; unwind
+                 (fk 'fail))))]
+        [else (loop (logic-var-val r))]))))
+
+(define (clear-attribute r)
+  (set-attribute r *unbound*))
+
+(define (verify-attribute r t)
+  (λ (fk)
+    (define a (logic-var-val r))
+    (cond
+      [(not (attribute? a)) (fk 'fail)]
+      [else
+       (((attribute-impl-verify (get-attribute-impl a)) a t) fk)])))
+
+(define (combine-attributes r1 r2)
+  (λ (fk)
+    (define a1 (logic-var-val r1))
+    (define a2 (logic-var-val r2))
+    (unless (and (attribute? a1) (attribute? a2))
+      (fk 'fail))
+    (define proc1 (attribute-impl-combine (get-attribute-impl a1)))
+    (define proc2 (attribute-impl-combine (get-attribute-impl a2)))
+    ((proc1 a1 a2)
+     (if (eq? proc1 proc2)
+         fk
+         (λ (m)
+           (if (procedure? m)
+               (unless (equal? fk m) (fk m)) ; unwind
+               ((proc2 a1 a2) fk)))))))
+
 (define-struct frozen (val))
 (define (freeze-ref r)
   (make-ref (make-frozen r)))
@@ -158,6 +223,7 @@
    [(? logic-var? s)
     (cond [(unbound-logic-var? s) '_]
           [(frozen-logic-var? s) s]
+          [(attributed-logic-var? s) s]
           [else (logic-var-val* (logic-var-val s))])]
    [(cons l r)
     (cons (logic-var-val* l) (logic-var-val* r))]
@@ -181,6 +247,7 @@
               [(? logic-var? term)
                (cond [(unbound-logic-var? term) #f]
                      [(frozen-logic-var? term) #f]
+                     [(attributed-logic-var? term) #f]
                      [else (loop (logic-var-val term))])]
               [(cons l r)
                (or (loop l) (loop r))]
@@ -200,6 +267,7 @@
    [(? logic-var? x)
     (cond [(unbound-logic-var? x) #f]
           [(frozen-logic-var? x) #t]
+          [(attributed-logic-var? x) #f]
           [else (constant? (logic-var-val x))])]
    [(cons l r) #f]
    [(mcons l r) #f]
@@ -215,6 +283,7 @@
    [(? logic-var? x)
     (cond [(unbound-logic-var? x) #f]
           [(frozen-logic-var? x) #f]
+          [(attributed-logic-var? x) #f]
           [else (is-compound? (logic-var-val x))])]
    [(cons l r) #t]
    [(mcons l r) #t]
@@ -230,6 +299,7 @@
    [(? logic-var? x)
     (cond [(unbound-logic-var? x) #t]
           [(frozen-logic-var? x) #f]
+          [(attributed-logic-var? x) #t]
           [else (var? (logic-var-val x))])]
    [(cons l r) (or (var? l) (var? r))]
    [(mcons l r) (or (var? l) (var? r))]
@@ -247,7 +317,7 @@
     (uni-match 
      s
      [(? logic-var? s)
-      (if (or (unbound-logic-var? s) (frozen-logic-var? s))
+      (if (or (unbound-logic-var? s) (frozen-logic-var? s) (attributed-logic-var? s))
           (hash-ref! dict s
                      (lambda ()
                        (freeze-ref s)))
@@ -271,6 +341,7 @@
    [(? logic-var? f)
     (cond [(unbound-logic-var? f) f]
           [(frozen-logic-var? f) (thaw-frozen-ref f)]
+          [(attributed-logic-var? f) (thaw-frozen-ref f)]
           [else (melt (logic-var-val f))])]
    [(cons l r)
     (cons (melt l) (melt r))]
@@ -292,6 +363,8 @@
      [(? logic-var? f)
       (cond [(unbound-logic-var? f) f]
             [(frozen-logic-var? f)
+             (hash-ref! dict f _)]
+            [(attributed-logic-var? f)
              (hash-ref! dict f _)]
             [else (loop (logic-var-val f))])]
      [(cons l r)
@@ -319,12 +392,21 @@
            (cond [(logic-var? y)
                   (cond [(unbound-logic-var? y) (eq? x y)]
                         [(frozen-logic-var? y) #f]
+                        [(attributed-logic-var? y) #f]
                         [else (ident? x (logic-var-val y))])]
                  [else #f])]
           [(frozen-logic-var? x)
            (cond [(logic-var? y)
                   (cond [(unbound-logic-var? y) #f]
                         [(frozen-logic-var? y) (eq? x y)]
+                        [(attributed-logic-var? y) #f]
+                        [else (ident? x (logic-var-val y))])]
+                 [else #f])]
+          [(attributed-logic-var? x)
+           (cond [(logic-var? y)
+                  (cond [(unbound-logic-var? y) #f]
+                        [(frozen-logic-var? y) #f]
+                        [(attributed-logic-var? y) (eq? x y)]
                         [else (ident? x (logic-var-val y))])]
                  [else #f])]
           [else (ident? (logic-var-val x) y)])]
@@ -334,6 +416,7 @@
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
             [(frozen-logic-var? y) #f]
+            [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) 
       (and (ident? xl yl) (ident? xr yr))]
@@ -349,6 +432,7 @@
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
             [(frozen-logic-var? y) #f]
+            [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) #f]
      [(mcons yl yr) 
@@ -364,6 +448,7 @@
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
             [(frozen-logic-var? y) #f]
+            [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) #f]
      [(mcons yl yr) #f]
@@ -378,6 +463,7 @@
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
             [(frozen-logic-var? y) #f]
+            [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) #f]
      [(mcons yl yr) #f]
@@ -398,6 +484,7 @@
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
             [(frozen-logic-var? y) #f]
+            [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) #f]
      [(mcons yl yr) #f]
@@ -418,6 +505,7 @@
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
             [(frozen-logic-var? y) #f]
+            [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) #f]
      [(mcons yl yr) #f]
@@ -433,6 +521,7 @@
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
             [(frozen-logic-var? y) #f]
+            [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) #f]
      [(mcons yl yr) #f]
@@ -465,9 +554,24 @@
                                   (unify1 t2 t1 s)]
                                  [(frozen-logic-var? t2)
                                   (cleanup-n-fail s)]
+                                 [(attributed-logic-var? t2)
+                                  (unify1 t2 t1 s)]
                                  [else
                                   (unify1 t1 (logic-var-val t2) s)])]
                           [else (cleanup-n-fail s)])]
+                   [(attributed-logic-var? t1)
+                    (cond [(logic-var? t2)
+                           (cond [(unbound-logic-var? t2)
+                                  (unify1 t2 t1 s)]
+                                 [(frozen-logic-var? t2)
+                                  (cleanup-n-fail s)]
+                                 [(attributed-logic-var? t2)
+                                  ; XXX: need to try other way around as well
+                                  ((combine-attributes t1 t2) s)]
+                                 [else
+                                  (unify1 t1 (logic-var-val t2) s)])]
+                          [else
+                           ((verify-attribute t1 t2) s)])]
                    [else 
                     (unify1 (logic-var-val t1) t2 s)])]
             [(logic-var? t2) (unify1 t2 t1 s)]

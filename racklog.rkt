@@ -267,6 +267,10 @@
     (%and (%set-attribute v (delayed v g))
           (%= x v))))
 
+(define (%different x y)
+  (%and (%delay x (%delay y (%/= x y)))
+        (%delay y (%delay x (%/= x y)))))
+
 (define (%not g)
   (%if-then-else g %fail %true))
 
@@ -471,6 +475,7 @@
  [%constant (unifiable? . -> . goal/c)]
  [%copy (unifiable? unifiable? . -> . goal/c)]
  [%delay (logic-var? goal/c . -> . goal/c)]
+ [%different (unifiable? unifiable? . -> . goal/c)]
  [%empty-rel relation/c]
  [%fail goal/c]
  [%freeze (unifiable? unifiable? . -> . goal/c)]

@@ -165,7 +165,15 @@
                (unless (equal? fk m) (fk m)) ; unwind
                ((proc2 a1 a2) fk)))))))
 
-(define-struct frozen (val))
+(define-struct frozen
+  (val)
+  #:property prop:attribute
+  (attribute
+   #:verify
+   (λ (r t) (λ (fk) (fk 'fail)))
+   #:combine
+   (λ (r1 r2) (λ (fk) (fk 'fail)))))
+
 (define (freeze-ref r)
   (make-ref (make-frozen r)))
 (define (thaw-frozen-ref r)
@@ -222,7 +230,6 @@
    v
    [(? logic-var? s)
     (cond [(unbound-logic-var? s) '_]
-          [(frozen-logic-var? s) s]
           [(attributed-logic-var? s) s]
           [else (logic-var-val* (logic-var-val s))])]
    [(cons l r)
@@ -246,7 +253,6 @@
               term
               [(? logic-var? term)
                (cond [(unbound-logic-var? term) #f]
-                     [(frozen-logic-var? term) #f]
                      [(attributed-logic-var? term) #f]
                      [else (loop (logic-var-val term))])]
               [(cons l r)
@@ -282,7 +288,6 @@
    x
    [(? logic-var? x)
     (cond [(unbound-logic-var? x) #f]
-          [(frozen-logic-var? x) #f]
           [(attributed-logic-var? x) #f]
           [else (is-compound? (logic-var-val x))])]
    [(cons l r) #t]
@@ -317,7 +322,7 @@
     (uni-match 
      s
      [(? logic-var? s)
-      (if (or (unbound-logic-var? s) (frozen-logic-var? s) (attributed-logic-var? s))
+      (if (or (unbound-logic-var? s) (attributed-logic-var? s))
           (hash-ref! dict s
                      (lambda ()
                        (freeze-ref s)))
@@ -340,7 +345,6 @@
    f
    [(? logic-var? f)
     (cond [(unbound-logic-var? f) f]
-          [(frozen-logic-var? f) (thaw-frozen-ref f)]
           [(attributed-logic-var? f) (thaw-frozen-ref f)]
           [else (melt (logic-var-val f))])]
    [(cons l r)
@@ -362,8 +366,6 @@
      s
      [(? logic-var? f)
       (cond [(unbound-logic-var? f) f]
-            [(frozen-logic-var? f)
-             (hash-ref! dict f _)]
             [(attributed-logic-var? f)
              (hash-ref! dict f _)]
             [else (loop (logic-var-val f))])]
@@ -391,21 +393,12 @@
     (cond [(unbound-logic-var? x)
            (cond [(logic-var? y)
                   (cond [(unbound-logic-var? y) (eq? x y)]
-                        [(frozen-logic-var? y) #f]
-                        [(attributed-logic-var? y) #f]
-                        [else (ident? x (logic-var-val y))])]
-                 [else #f])]
-          [(frozen-logic-var? x)
-           (cond [(logic-var? y)
-                  (cond [(unbound-logic-var? y) #f]
-                        [(frozen-logic-var? y) (eq? x y)]
                         [(attributed-logic-var? y) #f]
                         [else (ident? x (logic-var-val y))])]
                  [else #f])]
           [(attributed-logic-var? x)
            (cond [(logic-var? y)
                   (cond [(unbound-logic-var? y) #f]
-                        [(frozen-logic-var? y) #f]
                         [(attributed-logic-var? y) (eq? x y)]
                         [else (ident? x (logic-var-val y))])]
                  [else #f])]
@@ -415,7 +408,6 @@
      y
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
-            [(frozen-logic-var? y) #f]
             [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) 
@@ -431,7 +423,6 @@
      y
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
-            [(frozen-logic-var? y) #f]
             [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) #f]
@@ -447,7 +438,6 @@
      y
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
-            [(frozen-logic-var? y) #f]
             [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) #f]
@@ -462,7 +452,6 @@
      y
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
-            [(frozen-logic-var? y) #f]
             [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) #f]
@@ -483,7 +472,6 @@
      y
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
-            [(frozen-logic-var? y) #f]
             [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) #f]
@@ -504,7 +492,6 @@
      y
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
-            [(frozen-logic-var? y) #f]
             [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) #f]
@@ -520,7 +507,6 @@
      y
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
-            [(frozen-logic-var? y) #f]
             [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) #f]
@@ -548,23 +534,10 @@
                            (cleanup-n-fail s)]
                           [else 
                            (set-logic-var-val!/cleanup t1 t2 s)])]
-                   [(frozen-logic-var? t1)
-                    (cond [(logic-var? t2)
-                           (cond [(unbound-logic-var? t2)
-                                  (unify1 t2 t1 s)]
-                                 [(frozen-logic-var? t2)
-                                  (cleanup-n-fail s)]
-                                 [(attributed-logic-var? t2)
-                                  (unify1 t2 t1 s)]
-                                 [else
-                                  (unify1 t1 (logic-var-val t2) s)])]
-                          [else (cleanup-n-fail s)])]
                    [(attributed-logic-var? t1)
                     (cond [(logic-var? t2)
                            (cond [(unbound-logic-var? t2)
                                   (unify1 t2 t1 s)]
-                                 [(frozen-logic-var? t2)
-                                  (cleanup-n-fail s)]
                                  [(attributed-logic-var? t2)
                                   ; XXX: need to try other way around as well
                                   ((combine-attributes t1 t2) s)]

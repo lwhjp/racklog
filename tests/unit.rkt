@@ -693,4 +693,31 @@
  (%more) => #f
  (%which () (%apply %andmap (list %var (list (_))))) => empty
  (%more) => #f
+
+ (%which (x) (%unbound x)) => `([x . _])
+ (%which (x) (%unbound 1)) => #f
+ (%which (x y) (%= x (list y)) (%unbound x)) => #f
+ (%which (x) (%attributed-var x)) => #f
+ (%which (x) (%delay x %fail)) => `([x . _])
+ (%which (x) (%delay x %fail) (%= x 1)) => #f
+ (%which (x) (%delay x %true) (%= x 1)) => `([x . 1])
+ (%which (x) (%delay x %true) (%attributed-var x)) => `([x . _])
+ (%which (x) (%delay x %true) (%= x 1) (%attributed-var x)) => #f
+ (%which (x y z) (%delay y (%= z 3)) (%= x y) (%= x 4)) => `([x . 4] [y . 4] [z . 3])
+ (%which (x y z) (%delay y (%= z 3))) => `([x . _] [y . _] [z . _])
+ (%which (y z) (%delay y (%= z 3)) (%= y z) (%= z 3)) => `([y . 3] [z . 3])
+ (%which (x y z) (%delay x (%= y 2)) (%delay x (%= z 3))) => `([x . _] [y . _] [z . _])
+ (%which (x y z) (%delay x (%= y 2)) (%delay x (%= z 3)) (%= x 1)) => `([x . 1] [y . 2] [z . 3])
+ (%which (x y z) (%delay y (%= z 3)) (%delay x (%= y 2))) => `([x . _] [y . _] [z . _])
+ (%which (x y z) (%delay x (%= y 2)) (%delay y (%= z 3)) (%= x 1)) => `([x . 1] [y . 2] [z . 3])
+ (%which (x y) (%or (%delay x (%= y 1)) (%delay x (%= y 2))) (%= x 1)) => `([x . 1] [y . 1])
+ (%more) => `([x . 1] [y . 2])
+ (%more) => #f
+ (%which (x y) (%delay x (%or (%= y 1) (%= y 2))) (%= x 1)) => `([x . 1] [y . 1])
+ (%more) => `([x . 1] [y . 2])
+ (%more) => #f
+ (%which (x y) (%delay x %fail) (%= x y)) => `([x . _] [y . _])
+ (%which (x y z) (%delay x %fail) (%= y z) (%= x y)) => `([x . _] [y . _] [z . _])
+ (%which (x y z) (%delay x %fail) (%= y z) (%= x y) (%= z 1)) => #f
+ (%which (x y) (%delay x %fail) (%delay y %fail) (%= x y)) => `([x . _] [y . _])
  )

@@ -1566,6 +1566,14 @@ value.}
 The goal @racket[(%constant E)] succeeds if @racket[E] is an atomic
 value.}
 
+@defpred[(%unbound [E unifiable?])]{
+The goal @racket[(%unbound E)] succeeds if @racket[E] is completely
+uninstantiated, ie, it can be bound to any value.
+
+In particular, if two fresh logic variables @racket[X] and @racket[Y]
+are unified with each other, they will still each satisfy
+@racket[%unbound] until one is bound to an instantiated term.}
+
 @defpred[(%var [E unifiable?])]{
 The goal @racket[(%var E)] succeeds if @racket[E] is not completely
 instantiated, ie, it has at least one unbound variable in
@@ -1616,7 +1624,10 @@ The goal @racket[(%freeze S F)] unifies with @racket[F] a new frozen
 version of the structure in @racket[S].  Freezing implies that all
 the unbound variables are preserved.  @racket[F] can henceforth be
 used as @emph{bound} object with no fear of its variables
-getting bound by unification.}
+getting bound by unification.
+
+Note that this is not the same as Prolog's @tt{freeze/2}. For
+the Racklog equivalent, see @racket[%delay].}
 
 @defpred[(%melt [F unifiable?] [S unifiable?])]{
 The goal @racket[(%melt F S)] unifies @racket[S] with the thawed
@@ -1631,6 +1642,59 @@ new logic variables are used for unbound logic variables in
 @defpred[(%copy [F unifiable?] [S unifiable?])]{
 The goal @racket[(%copy F S)] unifies with @racket[S] a copy of the
 frozen structure in @racket[F].}
+
+@subsection{Attributed Variables}
+
+Support for attributed variables, as described in
+@cite["holzbaur" "demoen"].
+
+@defproc[(attribute? [x any/c]) boolean?]{
+Identifies an attribute.
+}
+
+@defproc[(make-attribute [unify-hook (-> unifiable? unifiable? goal/c)])
+         attribute?]{
+Creates a new attribute which may be attached to unbound logic
+variables along with an arbitrary value @racket[v]. After an
+attributed variable is unified with another term @racket[t2],
+@racket[unify-hook] will be called with the values @racket[v] and
+@racket[t2].
+}
+
+@defpred[(%attribute-ref [E unifiable?] [A attribute?] [V unifiable?])]{
+The goal @racket[(%attribute-ref E A V)] succeeds if @racket[E]
+is an attributed variable with attribute @racket[A] attached.
+In this case, the value originally passed to @racket[%attribute-set]
+is unified with @racket[V].}
+
+@defpred[(%attribute-set [E unifiable?] [A attribute?] [V unifiable?])]{
+The goal @racket[(%attribute-set E A V)] succeeds if @racket[E]
+is unbound. It attaches the attribute @racket[A] to the variable
+along with the value @racket[V]. If @racket[E] is later unified with
+an instantiated value or another attributed variable @racket[T],
+the post-unify hook associated with attribute @racket[A] will be
+called with arguments @racket[V] and @racket[T].
+
+If the attribute @racket[A] is already associated with the variable
+@racket[E], the original value will be replaced with the new @racket[V].}
+
+@defpred[(%attribute-remove [E unifiable?] [A attribute?])]{
+The goal @racket[(%attribute-remove E A)] always succeeds. If
+the attribute @racket[A] is currently associated with the variable
+@racket[E], this association is removed.}
+
+@defpred[(%attributed-var [E unifiable?])]{
+The goal @racket[(%attributed-var E)] succeeds if @racket[E] is
+not instantiated, and has one or more attributes attached.}
+
+@defpred[(%delay [E unifiable?] [G goal/c])]{
+If @racket[E] is unbound, the goal @racket[(%delay E G)] succeeds
+and associates the goal @racket[G] with @racket[E] such that
+@racket[G] is evaluated after @racket[E] has been bound with an
+instantiated term.
+
+If @racket[E] is at least partially instantiated, then @racket[G]
+is evaluated immediately.}
 
 @bibliography[
  @bib-entry[#:key "aop" 
@@ -1659,6 +1723,17 @@ frozen structure in @racket[F].}
     #:location "MIT Press"
     #:date "1990"
     #:is-book? #t]
+ @bib-entry[#:key "demoen"
+    #:author "Bart Demoen"
+    #:url "http://www.cs.kuleuven.ac.be/publicaties/rapporten/cw/CW350.abs.html"
+    #:title "Dynamic attributes, their hProlog implementation, and a first evaluation"
+    #:location "Report CW 350, Department of Computer Science, K.U. Leuven"
+    #:date "2002"]
+ @bib-entry[#:key "holzbaur"
+    #:author "Christian Holzbaur"
+    #:title "Metastructures vs. Attributed Variables in the Context of Extensible Unification"
+    #:location "PLIP, vol 631, 260--268"
+    #:date "1992"]
  @bib-entry[#:key "logick"
     #:author "Christopher T Haynes"
     #:title "Logic continuations"

@@ -197,6 +197,12 @@
 (define (((%nonvar x) sk) fk)
   (if (var? x) (fk) (sk fk)))
 
+(define (((%unbound x) sk) fk)
+  (if (unbound-term? x) (sk fk) (fk)))
+
+(define (((%attributed-var x) sk) fk)
+  (if (attributed-logic-var? x) (sk fk) (fk)))
+
 (define ((make-negation p) . args) 
   ;basically inlined cut-fail
   (lambda (sk)
@@ -214,6 +220,13 @@
 (define %/==
   (make-negation %==))
 
+(define (((%attribute-ref x a y) sk) fk)
+  (((%= (attribute-ref x a fk) y) sk) fk))
+
+(define %attribute-set attribute-set)
+
+(define %attribute-remove attribute-remove)
+
 (define (((%freeze s f) sk) fk)
   (((%= (freeze s) f) sk) fk))
 
@@ -225,6 +238,16 @@
 
 (define (((%copy s c) sk) fk)
   (((%= (copy s) c) sk) fk))
+
+(define delayed
+  (make-attribute (λ (g y) (%delay y g))))
+(define (%delay x g)
+  (%let (g2)
+    (%if-then-else (%attribute-ref x delayed g2)
+                   (%attribute-set x delayed (%and g2 g))
+                   (%if-then-else (%unbound x)
+                                  (%attribute-set x delayed g)
+                                  g))))
 
 (define (%not g)
   (%if-then-else g %fail %true))
@@ -402,6 +425,9 @@
  [unifiable? (any/c . -> . boolean?)]
  [answer-value? (any/c . -> . boolean?)]
  [answer? (any/c . -> . boolean?)]
+ [attribute? (any/c . -> . boolean?)]
+ [make-attribute (-> (unifiable? unifiable? . -> . goal/c)
+                     attribute?)]
  [%/= (unifiable? unifiable? . -> . goal/c)]
  [%/== (unifiable? unifiable? . -> . goal/c)]
  [%< (unifiable? unifiable? . -> . goal/c)]
@@ -415,11 +441,16 @@
  [%andmap (unifiable? unifiable? unifiable? ... . -> . goal/c)]
  [%append (unifiable? unifiable? unifiable? . -> . goal/c)]
  [%apply (unifiable? unifiable? . -> . goal/c)]
+ [%attribute-ref (unifiable? attribute? unifiable? . -> . goal/c)]
+ [%attribute-set (unifiable? attribute? unifiable? . -> . goal/c)]
+ [%attribute-remove (unifiable? attribute? . -> . goal/c)]
+ [%attributed-var (unifiable? . -> . goal/c)]
  [%bag-of (unifiable? goal/c unifiable? . -> . goal/c)]
  [%bag-of-1 (unifiable? goal/c unifiable? . -> . goal/c)]
  [%compound (unifiable? . -> . goal/c)]
  [%constant (unifiable? . -> . goal/c)]
  [%copy (unifiable? unifiable? . -> . goal/c)]
+ [%delay (unifiable? goal/c . -> . goal/c)]
  [%empty-rel relation/c]
  [%fail goal/c]
  [%freeze (unifiable? unifiable? . -> . goal/c)]
@@ -435,5 +466,6 @@
  [%set-of (unifiable? goal/c unifiable? . -> . goal/c)]
  [%set-of-1 (unifiable? goal/c unifiable? . -> . goal/c)]
  [%true goal/c]
+ [%unbound (unifiable? . -> . goal/c)]
  [%var (unifiable? . -> . goal/c)]
  [_ (-> logic-var?)]) 

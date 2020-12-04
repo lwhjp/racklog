@@ -102,6 +102,41 @@
 (define (unbound-logic-var? r)
   (and (logic-var? r) (eq? (logic-var-val r) *unbound*)))
 
+(define (unbound-term? r)
+  (or (unbound-logic-var? r)
+      (attributed-logic-var? r)
+      (and (logic-var? r) (unbound-term? (logic-var-val r)))))
+
+(define-struct attribute (unify-hook))
+(define-struct attributed (vals))
+(define (attributed-logic-var? r)
+  (and (logic-var? r) (attributed? (logic-var-val r))))
+(define (attribute-ref r a fail)
+  (if (attributed-logic-var? r)
+      (hash-ref (attributed-vals (logic-var-val r)) a fail)
+      (fail)))
+(define (((attribute-set r a v) sk) fk)
+  (cond
+    [(not (logic-var? r)) (fk)]
+    [(unbound-logic-var? r)
+     (let/logic-var ([r (attributed (hash a v))])
+       (sk fk))]
+    [(attributed-logic-var? r)
+     (let ([new-vals (hash-set (attributed-vals (logic-var-val r)) a v)])
+       (let/logic-var ([r (attributed new-vals)])
+         (sk fk)))]
+    [else (((attribute-set (logic-var-val r) a v) sk) fk)]))
+
+(define (((attribute-remove r a) sk) fk)
+  (cond
+    [(attributed-logic-var? r)
+       (let ([new-vals (hash-remove (attributed-vals (logic-var-val r)) a)])
+         (let/logic-var ([r (if (hash-empty? new-vals)
+                                *unbound*
+                                (attributed new-vals))])
+           (sk fk)))]
+    [else (sk fk)]))
+
 (define-struct frozen (val))
 (define (freeze-ref r)
   (make-frozen r))
@@ -160,6 +195,7 @@
    [(? logic-var? s)
     (cond [(unbound-logic-var? s) '_]
           [(frozen-logic-var? s) s]
+          [(attributed-logic-var? s) '_]
           [else (logic-var-val* (logic-var-val s))])]
    [(cons l r)
     (cons (logic-var-val* l) (logic-var-val* r))]
@@ -183,6 +219,7 @@
               [(? logic-var? term)
                (cond [(unbound-logic-var? term) #f]
                      [(frozen-logic-var? term) #f]
+                     [(attributed-logic-var? term) #f]
                      [else (loop (logic-var-val term))])]
               [(cons l r)
                (or (loop l) (loop r))]
@@ -202,6 +239,7 @@
    [(? logic-var? x)
     (cond [(unbound-logic-var? x) #f]
           [(frozen-logic-var? x) #t]
+          [(attributed-logic-var? x) #f]
           [else (constant? (logic-var-val x))])]
    [(cons l r) #f]
    [(mcons l r) #f]
@@ -217,6 +255,7 @@
    [(? logic-var? x)
     (cond [(unbound-logic-var? x) #f]
           [(frozen-logic-var? x) #f]
+          [(attributed-logic-var? x) #f]
           [else (is-compound? (logic-var-val x))])]
    [(cons l r) #t]
    [(mcons l r) #t]
@@ -232,6 +271,7 @@
    [(? logic-var? x)
     (cond [(unbound-logic-var? x) #t]
           [(frozen-logic-var? x) #f]
+          [(attributed-logic-var? x) #t]
           [else (var? (logic-var-val x))])]
    [(cons l r) (or (var? l) (var? r))]
    [(mcons l r) (or (var? l) (var? r))]
@@ -249,7 +289,7 @@
     (uni-match 
      s
      [(? logic-var? s)
-      (if (or (unbound-logic-var? s) (frozen-logic-var? s))
+      (if (or (unbound-logic-var? s) (frozen-logic-var? s) (attributed-logic-var? s))
           (hash-ref! dict s
                      (lambda ()
                        (freeze-ref s)))
@@ -273,6 +313,7 @@
    [(? logic-var? f)
     (cond [(unbound-logic-var? f) f]
           [(frozen-logic-var? f) (thaw-frozen-ref f)]
+          [(attributed-logic-var? f) f]
           [else (melt (logic-var-val f))])]
    [(cons l r)
     (cons (melt l) (melt r))]
@@ -295,6 +336,7 @@
       (cond [(unbound-logic-var? f) f]
             [(frozen-logic-var? f)
              (hash-ref! dict f _)]
+            [(attributed-logic-var? f) f]
             [else (loop (logic-var-val f))])]
      [(cons l r)
       (cons (loop l) (loop r))]
@@ -323,12 +365,21 @@
            (cond [(logic-var? y)
                   (cond [(unbound-logic-var? y) (eq? x y)]
                         [(frozen-logic-var? y) #f]
+                        [(attributed-logic-var? y) #f]
                         [else (ident? x (logic-var-val y))])]
                  [else #f])]
           [(frozen-logic-var? x)
            (cond [(logic-var? y)
                   (cond [(unbound-logic-var? y) #f]
                         [(frozen-logic-var? y) (eq? x y)]
+                        [(attributed-logic-var? y) #f]
+                        [else (ident? x (logic-var-val y))])]
+                 [else #f])]
+          [(attributed-logic-var? x)
+           (cond [(logic-var? y)
+                  (cond [(unbound-logic-var? y) #f]
+                        [(frozen-logic-var? y) #f]
+                        [(attributed-logic-var? y) (eq? x y)]
                         [else (ident? x (logic-var-val y))])]
                  [else #f])]
           [else (ident? (logic-var-val x) y)])]
@@ -338,6 +389,7 @@
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
             [(frozen-logic-var? y) #f]
+            [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) 
       (and (ident? xl yl) (ident? xr yr))]
@@ -353,6 +405,7 @@
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
             [(frozen-logic-var? y) #f]
+            [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) #f]
      [(mcons yl yr) 
@@ -368,6 +421,7 @@
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
             [(frozen-logic-var? y) #f]
+            [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) #f]
      [(mcons yl yr) #f]
@@ -382,6 +436,7 @@
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
             [(frozen-logic-var? y) #f]
+            [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) #f]
      [(mcons yl yr) #f]
@@ -402,6 +457,7 @@
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
             [(frozen-logic-var? y) #f]
+            [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) #f]
      [(mcons yl yr) #f]
@@ -422,6 +478,7 @@
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
             [(frozen-logic-var? y) #f]
+            [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) #f]
      [(mcons yl yr) #f]
@@ -437,6 +494,7 @@
      [(? logic-var? y)
       (cond [(unbound-logic-var? y) #f]
             [(frozen-logic-var? y) #f]
+            [(attributed-logic-var? y) #f]
             [else (ident? x (logic-var-val y))])]
      [(cons yl yr) #f]
      [(mcons yl yr) #f]
@@ -448,6 +506,7 @@
 
 (define ((unify t1 t2) sk)
   (lambda (fk)
+    (define post-unify-hooks '())
     (define (unify1 t1 t2 next)
       (cond [(eqv? t1 t2) (next)]
             [(logic-var? t1)
@@ -463,9 +522,22 @@
                                   (unify1 t2 t1 next)]
                                  [(frozen-logic-var? t2)
                                   (fk)]
+                                 [(attributed-logic-var? t2)
+                                  (unify1 t2 t1 next)]
                                  [else
                                   (unify1 t1 (logic-var-val t2) next)])]
                           [else (fk)])]
+                   [(attributed-logic-var? t1)
+                    (cond
+                      [(unbound-logic-var? t2)
+                       (unify1 t2 t1 next)]
+                      [else
+                       (set! post-unify-hooks
+                             (cons (cons (attributed-vals (logic-var-val t1))
+                                         t2)
+                                   post-unify-hooks))
+                       (let/logic-var ([t1 *unbound*])
+                         (unify1 t1 t2 next))])]
                    [else 
                     (unify1 (logic-var-val t1) t2 next)])]
             [(logic-var? t2) (unify1 t2 t1 next)]
@@ -517,7 +589,21 @@
              (if (equal? t1 t2) (next) (fk))]
             [else
              (fk)]))
-    (unify1 t1 t2 (λ () (sk fk)))))
+    (define (run-post-unify-hooks)
+      (let next-hook ([hooks post-unify-hooks]
+                      [fk fk])
+        (match hooks
+          ['() (sk fk)]
+          [(cons (cons attrs t2) hooks-rest)
+           (let next-attr ([attrs (hash->list attrs)]
+                           [fk fk])
+             (match attrs
+               ['() (next-hook hooks-rest fk)]
+               [(cons (cons attr val) attrs-rest)
+                ((((attribute-unify-hook attr) val t2)
+                  (lambda (fk) (next-attr attrs-rest fk)))
+                 fk)]))])))
+    (unify1 t1 t2 run-post-unify-hooks)))
 
 (define-syntax-rule (or* x f ...)
   (or (f x) ...))
